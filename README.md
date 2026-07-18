@@ -54,14 +54,16 @@ All display parameters are now virtual methods on `Board`, overridden per-board:
 
 ## Files Changed
 
-```
-CMakeLists.txt                       → PROJECT_VER set to "V1.0.37.2-LTS-BIG"
-main/boards/board.h                  → virtual LCD method declarations + defaults
-main/boards/nerdoctaxegamma.h        → getLCDWidth/Height/YGap/PixelClock overrides
-main/boards/nerdoctaxegamma.cpp      → isFlipScreenEnabled() — inverted for 180° mount
-main/displays/displayDriver.cpp      → pixel scaler state + lvglFlushCallback rewrite
-                                       + initTDisplayS3() board-aware refactor
-```
+> 📂 **[See full diff vs V1.0.37.2-LTS](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/compare/V1.0.37.2-LTS...nerdoctaxe-gamma-3.5inch-display)**  
+> 📝 **[Commit e896051 — all 5 modified files](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/commit/e896051)**
+
+| File | Change | Direct link |
+|------|--------|-------------|
+| `CMakeLists.txt` | `PROJECT_VER` set to `"V1.0.37.2-LTS-BIG"` | [view](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/blob/nerdoctaxe-gamma-3.5inch-display/CMakeLists.txt) |
+| `main/boards/board.h` | Virtual LCD method declarations + defaults | [view](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/blob/nerdoctaxe-gamma-3.5inch-display/main/boards/board.h) |
+| `main/boards/nerdoctaxegamma.h` | `getLCDWidth/Height/YGap/PixelClock` overrides | [view](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/blob/nerdoctaxe-gamma-3.5inch-display/main/boards/nerdoctaxegamma.h) |
+| `main/boards/nerdoctaxegamma.cpp` | `isFlipScreenEnabled()` — inverted for 180° mount | [view](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/blob/nerdoctaxe-gamma-3.5inch-display/main/boards/nerdoctaxegamma.cpp) |
+| `main/displays/displayDriver.cpp` | Pixel scaler + `lvglFlushCallback` rewrite + board-aware `initTDisplayS3()` | [view](https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen/blob/nerdoctaxe-gamma-3.5inch-display/main/displays/displayDriver.cpp) |
 
 ---
 
@@ -84,8 +86,9 @@ Either use this fork directly, or apply the patch file:
 
 ```bash
 # Option A — use this fork
-git clone https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma.git
-cd ESP-Miner-NerdQAxePlus-Gamma
+git clone https://github.com/ziomik/ESP-Miner-NerdQAxePlus-Gamma-BigScreen.git
+cd ESP-Miner-NerdQAxePlus-Gamma-BigScreen
+git checkout nerdoctaxe-gamma-3.5inch-display
 
 # Option B — apply patch to upstream
 cd ESP-Miner-NerdQAxePlus

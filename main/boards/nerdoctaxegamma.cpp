@@ -92,6 +92,14 @@ NerdOctaxeGamma::NerdOctaxeGamma()
     }
 }
 
+bool NerdOctaxeGamma::isFlipScreenEnabled()
+{
+    // Display is physically mounted rotated 180°.
+    // Invert the NVS flipscreen setting: default (0) → needs mirror ON (true),
+    // user toggle (1) → flip back to standard orientation (false).
+    return !Board::isFlipScreenEnabled();
+}
+
 bool NerdOctaxeGamma::initBoard()
 {
     // Call parent initBoard() (VR init, ASIC power-on, etc.)

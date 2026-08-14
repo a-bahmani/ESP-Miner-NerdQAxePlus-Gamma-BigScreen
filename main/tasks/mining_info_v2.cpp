@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include "esp_log.h"
+#include "esp_random.h"
 #include "mining.h"
 
 extern "C" {
@@ -212,18 +213,16 @@ void MiningInfoV2Extended::updateJob(const sv2_ext_job_t *ext_job,
     }
 }
 
-bm_job *MiningInfoV2Extended::buildBmJob(uint32_t extranonce_2, int pool_id, uint32_t asic_diff)
+bm_job *MiningInfoV2Extended::buildBmJob(uint32_t /*extranonce_2*/, int pool_id, uint32_t asic_diff)
 {
     bm_job *job = (bm_job *)malloc(sizeof(bm_job));
     if (!job) return nullptr;
 
-    // Derive extranonce_2 binary from counter (big-endian)
+    // Random miner-owned extranonce bytes (pool assigns size / prefix)
     uint8_t en2_bin[32];
     memset(en2_bin, 0, sizeof(en2_bin));
-    uint32_t counter = extranonce_2;
-    for (int i = m_extranonce_size - 1; i >= 0 && counter > 0; i--) {
-        en2_bin[i] = (uint8_t)(counter & 0xFF);
-        counter >>= 8;
+    if (m_extranonce_size > 0 && m_extranonce_size <= sizeof(en2_bin)) {
+        esp_fill_random(en2_bin, m_extranonce_size);
     }
 
     // Compute coinbase tx hash: double_sha256(prefix + extranonce_prefix + extranonce_2 + suffix)

@@ -4,6 +4,7 @@
 #include <sys/time.h>
 
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "mining.h"
@@ -14,6 +15,10 @@
 #include "boards/board.h"
 #include "macros.h"
 #include "system.h"
+
+extern "C" {
+#include "mining_utils.h"
+}
 
 #define PRIMARY 0
 #define SECONDARY 1
@@ -69,11 +74,19 @@ class MiningInfoV1 : public MiningInfoBase {
 
     // --- MiningInfoBase interface ---
 
-    bm_job* buildBmJob(uint32_t extranonce_2, int pool_id, uint32_t asic_diff) override
+    bm_job* buildBmJob(uint32_t /*extranonce_2*/, int pool_id, uint32_t asic_diff) override
     {
-        // generate extranonce2 hex string
-        char extranonce_2_str[extranonce_2_len * 2 + 1]; // +1 zero termination
-        snprintf(extranonce_2_str, sizeof(extranonce_2_str), "%0*lx", (int) extranonce_2_len * 2, (unsigned long) extranonce_2);
+        // Random extranonce2 of the pool-specified byte length (typically 4–8).
+        // Size must match mining.subscribe / mining.set_extranonce or shares are rejected.
+        if (extranonce_2_len <= 0 || extranonce_2_len > 32) {
+            ESP_LOGE(TAG, "invalid extranonce2 length: %d", extranonce_2_len);
+            return nullptr;
+        }
+
+        uint8_t en2_bin[32];
+        char extranonce_2_str[65]; // max 32 bytes → 64 hex chars + NUL
+        esp_fill_random(en2_bin, (size_t) extranonce_2_len);
+        bin2hex(en2_bin, (size_t) extranonce_2_len, extranonce_2_str, sizeof(extranonce_2_str));
 
         // generate coinbase tx
         int coinbase_tx_len = strlen(current_job->coinbase_1) + strlen(extranonce_str) + strlen(extranonce_2_str) +
@@ -304,7 +317,8 @@ void create_jobs_task(void *pvParameters)
 
     uint32_t last_ntime[2]{0};
     uint64_t last_submit_time = 0;
-    uint32_t extranonce_2 = 0;
+    // Sequential ASIC job id only — extranonce2 is chosen randomly inside buildBmJob().
+    uint32_t job_id = 0;
 
     int lastJobInterval = board->getAsicJobIntervalMs();
 
@@ -351,8 +365,12 @@ void create_jobs_task(void *pvParameters)
             }
 
             uint32_t asic_diff = STRATUM_MANAGER->selectAsicDiff(active_pool, mi->getActiveDifficulty());
-            next_job = mi->buildBmJob(extranonce_2, active_pool, asic_diff);
+            next_job = mi->buildBmJob(0, active_pool, asic_diff);
         } // mutex
+
+        if (!next_job) {
+            continue;
+        }
 
         // set asic difficulty
         asics->setJobDifficultyMask(next_job->asic_diff);
@@ -363,14 +381,15 @@ void create_jobs_task(void *pvParameters)
         }
         last_submit_time = current_time;
 
-        int asic_job_id = asics->sendWork(extranonce_2, next_job);
+        int asic_job_id = asics->sendWork(job_id, next_job);
 
-        ESP_LOGD(TAG, "(%s) Sent Job (%d): %02X", active_pool_str, active_pool, asic_job_id);
+        ESP_LOGD(TAG, "(%s) Sent Job (%d): %02X en2=%s", active_pool_str, active_pool, asic_job_id,
+                 next_job->extranonce2 ? next_job->extranonce2 : "");
 
         // save job
         asicJobs.storeJob(next_job, asic_job_id);
 
-        extranonce_2++;
+        job_id++;
     }
 
 }

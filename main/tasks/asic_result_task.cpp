@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -10,6 +11,7 @@
 #include "boards/board.h"
 
 #include "simple_ring64.hpp"
+#include "asic_job_select.h"
 #include "utils.h"
 
 static const char *TAG = "asic_result";
@@ -79,17 +81,40 @@ void ASIC_result_task(void *pvParameters)
 
         uint8_t asic_job_id = asic_result.job_id;
 
+        if (STRATUM_MANAGER) {
+            STRATUM_MANAGER->flushPendingShares();
+        }
+
         bm_job *job = asicJobs.getClone(asic_job_id);
-        if (!job) {
-            //ESP_LOGI(TAG, "Invalid job id found, 0x%02X", asic_job_id);
+        bm_job *retired = asicJobs.getRetiredClone(asic_job_id);
+        if (!job && !retired) {
+            ESP_LOGW(TAG, "no active or retired job for ASIC job id 0x%02X", asic_job_id);
             continue;
         }
 
-        // now we have the original job and can `or` the version
-        asic_result.rolled_version |= job->version;
+        uint32_t version_bits = asic_result.rolled_version;
+        double active_diff = 0;
+        double retired_diff = 0;
+        if (job) {
+            active_diff = test_nonce_value(job, asic_result.nonce, version_bits | job->version);
+        }
+        if (retired) {
+            retired_diff = test_nonce_value(retired, asic_result.nonce, version_bits | retired->version);
+        }
 
-        // check the nonce difficulty
-        double nonce_diff = test_nonce_value(job, asic_result.nonce, asic_result.rolled_version);
+        const bool used_retired = (!job && retired) ||
+                                  (job && retired && active_diff < (double) job->asic_diff &&
+                                   retired_diff >= (double) retired->asic_diff);
+        double nonce_diff = 0;
+        job = select_job_for_nonce(job, retired, active_diff, retired_diff, &nonce_diff);
+        if (!job) {
+            ESP_LOGW(TAG, "no usable job for ASIC job id 0x%02X", asic_job_id);
+            continue;
+        }
+        asic_result.rolled_version = version_bits | job->version;
+        if (used_retired) {
+            ESP_LOGW(TAG, "using retired job 0x%02X after clean/evict", asic_job_id);
+        }
 
         // get best known session diff
         char bestDiffString[16];
@@ -120,7 +145,7 @@ void ASIC_result_task(void *pvParameters)
         // send duplicates to the server (they will get rejected and counted as rejected)
         if (nonce_diff >= job->pool_diff) {
             STRATUM_MANAGER->submitShare(job->pool_id, job->jobid, job->extranonce2, job->ntime, asic_result.nonce,
-                                    asic_result.rolled_version, job->version);
+                                    asic_result.rolled_version, job->version, nonce_diff);
         }
 
         STRATUM_MANAGER->checkForBestDiff(job->pool_id, nonce_diff, job->target);

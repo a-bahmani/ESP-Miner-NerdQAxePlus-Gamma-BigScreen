@@ -133,6 +133,7 @@ void StratumTaskV2::protocolLoop()
     // Connection successful - mark as connected
     connectedCallback();
     m_isConnected = true;
+    m_manager->flushPendingShares();
 
     ESP_LOGI(m_tag, "SV2+Noise connection ready, waiting for jobs");
 
@@ -585,7 +586,7 @@ void StratumTaskV2::handleSubmitSharesError(const uint8_t *payload, uint32_t len
 // Share Submission
 // ============================================================================
 
-void StratumTaskV2::submitShare(const char *jobid, const char *extranonce_2,
+bool StratumTaskV2::submitShare(const char *jobid, const char *extranonce_2,
                                 const uint32_t ntime, const uint32_t nonce,
                                 const uint32_t version_rolled, const uint32_t version_base)
 {
@@ -594,7 +595,7 @@ void StratumTaskV2::submitShare(const char *jobid, const char *extranonce_2,
 
     if (!noise || !transport) {
         ESP_LOGE(m_tag, "Cannot submit share: no connection");
-        return;
+        return false;
     }
 
     // Convert string job_id to uint32_t (SV2 uses numeric job IDs)
@@ -631,14 +632,16 @@ void StratumTaskV2::submitShare(const char *jobid, const char *extranonce_2,
 
     if (frame_len < 0) {
         ESP_LOGE(m_tag, "Failed to build SubmitShares frame");
-        return;
+        return false;
     }
 
     m_lastSubmitTimeUs = esp_timer_get_time();
 
     if (sv2_noise_send(noise, transport, buf, frame_len) != 0) {
         ESP_LOGE(m_tag, "Failed to send share");
+        return false;
     }
+    return true;
 }
 
 // ============================================================================

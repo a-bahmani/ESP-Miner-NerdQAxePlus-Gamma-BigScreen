@@ -41,3 +41,4 @@ config.cvs
 managed_components/*
 release/
 esp-miner-*.bin
+host_test/test_block_submit_safety

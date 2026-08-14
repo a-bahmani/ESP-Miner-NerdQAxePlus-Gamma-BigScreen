@@ -8,9 +8,11 @@
 #include "ArduinoJson.h"
 
 #include "stratum_task.h"
+#include "pending_share_queue.h"
 #include "../tasks/ping_task.h"
 
 #define DIFF_STRING_SIZE 12
+#define SUBMIT_IMMEDIATE_RETRIES 3
 
 /**
  * @brief StratumManager handles pool selection, connection management, and failover.
@@ -40,6 +42,8 @@ class StratumManager {
     const char *m_tag = "stratum-manager"; ///< Debug tag for logging
 
     pthread_mutex_t m_mutex = PTHREAD_MUTEX_INITIALIZER; ///< Mutex for thread safety
+    pthread_mutex_t m_submitMutex = PTHREAD_MUTEX_INITIALIZER;
+    PendingShareQueue m_pendingShares;
     StratumApiV1Message m_stratum_api_v1_message;        ///< API message handler
     PoolMode m_poolmode;                                 // default FAILOVER
     uint64_t m_lastSubmitResponseTimestamp = 0;              ///< Timestamp of last submitted share response
@@ -84,6 +88,11 @@ class StratumManager {
 
     void freeStratumV1Message(StratumApiV1Message *message);
 
+    bool trySendShare(int pool, const char *jobid, const char *extranonce_2, uint32_t ntime, uint32_t nonce,
+                      uint32_t version_rolled, uint32_t version_base);
+    void enqueuePendingShare(int pool, const char *jobid, const char *extranonce_2, uint32_t ntime, uint32_t nonce,
+                             uint32_t version_rolled, uint32_t version_base, double nonce_diff, int64_t queued_us = 0);
+
     // abstract methods
     // reconnect logic for failover mode
     virtual void reconnectTimerCallback(int index) = 0;
@@ -110,7 +119,9 @@ class StratumManager {
     // version_rolled = full rolled version (base | rolled bits)
     // version_base   = original block template version
     void submitShare(int pool, const char *jobid, const char *extranonce_2, const uint32_t ntime, const uint32_t nonce,
-                     const uint32_t version_rolled, const uint32_t version_base);
+                     const uint32_t version_rolled, const uint32_t version_base, double nonce_diff);
+
+    void flushPendingShares();
 
     void checkForFoundBlock(int pool, double diff, uint32_t nbits);
 

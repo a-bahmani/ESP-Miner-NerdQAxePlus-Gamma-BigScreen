@@ -1,6 +1,11 @@
+#include <inttypes.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "esp_log.h"
 #include "esp_sntp.h"
@@ -249,19 +254,64 @@ void StratumManager::dispatch(int pool, JsonDocument &doc)
     freeStratumV1Message(&m_stratum_api_v1_message);
 }
 
+bool StratumManager::trySendShare(int pool, const char *jobid, const char *extranonce_2, uint32_t ntime, uint32_t nonce,
+                                  uint32_t version_rolled, uint32_t version_base)
+{
+    if (pool < 0 || pool > 1 || !m_stratumTasks[pool]) {
+        return false;
+    }
+    PThreadGuard lock(m_submitMutex);
+    return m_stratumTasks[pool]->submitShare(jobid, extranonce_2, ntime, nonce, version_rolled, version_base);
+}
+
+void StratumManager::enqueuePendingShare(int pool, const char *jobid, const char *extranonce_2, uint32_t ntime, uint32_t nonce,
+                                         uint32_t version_rolled, uint32_t version_base, double nonce_diff, int64_t queued_us)
+{
+    if (!m_pendingShares.enqueue(pool, jobid, extranonce_2, ntime, nonce, version_rolled, version_base, nonce_diff,
+                                 esp_timer_get_time(), queued_us)) {
+        ESP_LOGE(m_tag, "pending share queue full, dropping nonce %08" PRIX32 " diff %.1f", nonce, nonce_diff);
+        return;
+    }
+    ESP_LOGW(m_tag, "queued share for retry nonce %08" PRIX32 " diff %.1f", nonce, nonce_diff);
+}
+
+void StratumManager::flushPendingShares()
+{
+    PendingShare local[PENDING_SHARE_MAX];
+    int count = m_pendingShares.takeReady(local, PENDING_SHARE_MAX, esp_timer_get_time());
+
+    for (int i = 0; i < count; i++) {
+        bool sent = trySendShare(local[i].pool, local[i].jobid, local[i].extranonce2, local[i].ntime, local[i].nonce,
+                                 local[i].version_rolled, local[i].version_base);
+        if (!sent) {
+            enqueuePendingShare(local[i].pool, local[i].jobid, local[i].extranonce2, local[i].ntime, local[i].nonce,
+                                local[i].version_rolled, local[i].version_base, local[i].nonce_diff, local[i].queued_us);
+        } else {
+            ESP_LOGI(m_tag, "retried share ok nonce %08" PRIX32, local[i].nonce);
+        }
+        safe_free(local[i].jobid);
+        safe_free(local[i].extranonce2);
+    }
+}
+
 void StratumManager::submitShare(int pool, const char *jobid, const char *extranonce_2, const uint32_t ntime, const uint32_t nonce,
-                                 const uint32_t version_rolled, const uint32_t version_base)
+                                 const uint32_t version_rolled, const uint32_t version_base, double nonce_diff)
 {
     if (!m_stratumTasks[pool]) {
         ESP_LOGE(m_tag, "stratum task is null");
+        enqueuePendingShare(pool, jobid, extranonce_2, ntime, nonce, version_rolled, version_base, nonce_diff);
         return;
     }
-    // send to the selected pool
-    if (!m_stratumTasks[pool]->m_isConnected) {
-        ESP_LOGE(m_tag, "selected pool not connected");
-        return;
+
+    for (int attempt = 0; attempt < SUBMIT_IMMEDIATE_RETRIES; attempt++) {
+        if (trySendShare(pool, jobid, extranonce_2, ntime, nonce, version_rolled, version_base)) {
+            return;
+        }
+        ESP_LOGW(m_tag, "share send failed (try %d/%d) nonce %08" PRIX32, attempt + 1, SUBMIT_IMMEDIATE_RETRIES, nonce);
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
-    m_stratumTasks[pool]->submitShare(jobid, extranonce_2, ntime, nonce, version_rolled, version_base);
+
+    enqueuePendingShare(pool, jobid, extranonce_2, ntime, nonce, version_rolled, version_base, nonce_diff);
 }
 
 // --- stratum config related; mutexed

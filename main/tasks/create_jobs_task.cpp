@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <limits.h>
 #include <pthread.h>
 #include <string.h>
@@ -24,6 +25,42 @@ pthread_mutex_t job_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t job_cond = PTHREAD_COND_INITIALIZER;
 
 pthread_mutex_t current_stratum_job_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Trial-division primality for uint32 Extranonce2 sequence.
+static bool is_prime_u32(uint32_t n)
+{
+    if (n < 2) {
+        return false;
+    }
+    if (n == 2 || n == 3) {
+        return true;
+    }
+    if ((n % 2) == 0 || (n % 3) == 0) {
+        return false;
+    }
+    for (uint32_t i = 5; i <= n / i; i += 6) {
+        if ((n % i) == 0 || (n % (i + 2)) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Next prime strictly greater than n. Wraps to 2 after UINT32_MAX.
+static uint32_t next_prime_u32(uint32_t n)
+{
+    if (n < 2) {
+        return 2;
+    }
+    uint32_t candidate = n + 1;
+    while (candidate != 0) {
+        if (is_prime_u32(candidate)) {
+            return candidate;
+        }
+        candidate++;
+    }
+    return 2;
+}
 
 // ============================================================================
 // MiningInfoBase - abstract interface for protocol-agnostic job construction
@@ -304,7 +341,8 @@ void create_jobs_task(void *pvParameters)
 
     uint32_t last_ntime[2]{0};
     uint64_t last_submit_time = 0;
-    uint32_t extranonce_2 = 0;
+    uint32_t extranonce_2 = 2; // first prime
+    uint32_t asic_job_counter = 0;
 
     int lastJobInterval = board->getAsicJobIntervalMs();
 
@@ -363,14 +401,16 @@ void create_jobs_task(void *pvParameters)
         }
         last_submit_time = current_time;
 
-        int asic_job_id = asics->sendWork(extranonce_2, next_job);
+        // Keep ASIC job IDs sequential; Extranonce2 walks primes separately.
+        int asic_job_id = asics->sendWork(asic_job_counter++, next_job);
 
-        ESP_LOGD(TAG, "(%s) Sent Job (%d): %02X", active_pool_str, active_pool, asic_job_id);
+        ESP_LOGD(TAG, "(%s) Sent Job (%d): %02X en2=%" PRIu32, active_pool_str, active_pool, asic_job_id,
+                 extranonce_2);
 
         // save job
         asicJobs.storeJob(next_job, asic_job_id);
 
-        extranonce_2++;
+        extranonce_2 = next_prime_u32(extranonce_2);
     }
 
 }

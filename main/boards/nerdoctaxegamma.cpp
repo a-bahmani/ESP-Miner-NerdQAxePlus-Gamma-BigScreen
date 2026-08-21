@@ -39,6 +39,9 @@ NerdOctaxeGamma::NerdOctaxeGamma()
 
     m_swarmColorName = "#11d51e"; // green
 
+    // Panel is mounted 180° — default Flip Screen on for correct orientation
+    m_flipScreen = true;
+
     // Hardware voltage regulator detection (available from rev 3.0+)
     // GPIO3 is located next to GPIO10 (TPS_EN) on the board for easy routing
     // The pin has internal pull-down, so older boards without the strapping
@@ -90,14 +93,6 @@ NerdOctaxeGamma::NerdOctaxeGamma()
 
         ESP_LOGI(TAG, "TPS53647 voltage regulator detected (GPIO3=LOW, 4 phases, using inherited)");
     }
-}
-
-bool NerdOctaxeGamma::isFlipScreenEnabled()
-{
-    // Display is physically mounted rotated 180°.
-    // Invert the NVS flipscreen setting: default (0) → needs mirror ON (true),
-    // user toggle (1) → flip back to standard orientation (false).
-    return !Board::isFlipScreenEnabled();
 }
 
 bool NerdOctaxeGamma::initBoard()

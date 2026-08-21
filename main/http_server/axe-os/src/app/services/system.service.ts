@@ -70,7 +70,7 @@ const defaultInfo: ISystemInfo = {
   frequency: 485,
   defaultFrequency: 485,
   version: "2.0",
-  flipscreen: 0,
+  flipscreen: 1,
   invertscreen: 0,
   invertfanpolarity: 0,
   autofanspeed: 1,

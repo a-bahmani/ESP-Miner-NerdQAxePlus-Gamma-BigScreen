@@ -27,9 +27,6 @@ class NerdOctaxeGamma : public NerdQaxePlus2 {
     virtual void requestChipTemps() override;
     float getVRTemp() override;
 
-    // Display is physically mounted rotated 180° — invert flip-screen toggle relative to other boards
-    virtual bool isFlipScreenEnabled() override;
-
     // NerdOCTAXE-Gamma display: 3.5" 480×320 panel, no GRAM centering gap needed
     virtual int getLCDWidth()             override { return 480;             }
     virtual int getLCDHeight()            override { return 320;             }

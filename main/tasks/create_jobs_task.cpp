@@ -348,6 +348,8 @@ void create_jobs_task(void *pvParameters)
 
             if (mi->isNewWork(last_ntime[active_pool])) {
                 ESP_LOGI(TAG, "(%s) New Work Received %s", active_pool_str, mi->getJobId());
+                // New block / new ntime: restart Extranonce2 from zero
+                extranonce_2 = 0;
             }
 
             uint32_t asic_diff = STRATUM_MANAGER->selectAsicDiff(active_pool, mi->getActiveDifficulty());

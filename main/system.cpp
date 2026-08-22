@@ -290,7 +290,7 @@ void System::task() {
         uint32_t foundBlocks = STRATUM_MANAGER->getFoundBlocks();
 
         // trigger the overlay only once when block is found
-        if (foundBlocks != lastFoundBlocks && foundBlocks) {
+        if (foundBlocks > lastFoundBlocks) {
             m_display->showFoundBlockOverlay();
         }
         lastFoundBlocks = foundBlocks;

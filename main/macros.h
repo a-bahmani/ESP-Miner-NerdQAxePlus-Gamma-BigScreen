@@ -1,5 +1,7 @@
 #pragma once
 
+#include <pthread.h>   // PThreadGuard below uses pthread_mutex_*
+
 
 static inline void* _malloc_psram(size_t sz) {
     if (!sz) return NULL;

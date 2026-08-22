@@ -41,7 +41,7 @@ include_directories("./components/arduinojson")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # Custom version string — identifies this as the NerdOCTAXE-Gamma big-screen build
-set(PROJECT_VER "V1.0.37.2-LTS")
+#set(PROJECT_VER "V1.0.37.2-LTS")
 
 project(esp-miner)
 

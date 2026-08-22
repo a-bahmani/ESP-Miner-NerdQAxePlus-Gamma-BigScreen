@@ -7,13 +7,26 @@
 #include "esp_transport_tcp.h"
 #include "esp_transport_ssl.h"
 
+#include "macros.h"
 #include "nvs_config.h"
 #include "stratum_transport.h"
+
+// esp_transport_get_socket() exists in IDF 5.3 but is only declared in
+// the private header (esp_transport_internal.h). A forward declaration
+// avoids pulling in the entire private API surface.
+extern "C" int esp_transport_get_socket(esp_transport_handle_t t);
 
 static const char* TAG = "stratum_transport";
 
 StratumTransport::StratumTransport(bool use_tls)
-    : m_use_tls(use_tls), m_t(nullptr) {}
+    : m_use_tls(use_tls), m_t(nullptr)
+{
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&m_lock, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
 
 StratumTransport::~StratumTransport()
 {
@@ -22,6 +35,10 @@ StratumTransport::~StratumTransport()
 
 bool StratumTransport::connect(const char* host, const char* ip, uint16_t port)
 {
+    // hold the lock across the whole connect so a racing submitShare can't
+    // touch a half-initialized transport (esp. mid-TLS-handshake)
+    PThreadGuard g(m_lock);
+
     close();
 
     esp_transport_handle_t t = nullptr;
@@ -64,6 +81,8 @@ bool StratumTransport::connect(const char* host, const char* ip, uint16_t port)
 
 int StratumTransport::send(const void* data, size_t len)
 {
+    PThreadGuard g(m_lock);
+
     if (!m_t) {
         errno = ENOTCONN;
         return -1;
@@ -119,6 +138,8 @@ int StratumTransport::recv(void* buf, size_t len)
 
 bool StratumTransport::isConnected()
 {
+    PThreadGuard g(m_lock);
+
     if (!m_t) {
         return false;
     }
@@ -127,8 +148,25 @@ bool StratumTransport::isConnected()
     return (r >= 0);
 }
 
+void StratumTransport::shutdownSocket_()
+{
+    // only the owner task mutates m_t, so reading it here without the lock
+    // is safe; shutdown() frees nothing but makes a writer blocked inside
+    // esp_transport_write() fail out and release m_lock
+    if (!m_t) {
+        return;
+    }
+    int sock = esp_transport_get_socket(m_t);
+    if (sock >= 0) {
+        shutdown(sock, SHUT_RDWR);
+    }
+}
+
 void StratumTransport::close()
 {
+    shutdownSocket_();
+
+    PThreadGuard g(m_lock);
     if (m_t) {
         esp_transport_close(m_t);
         esp_transport_destroy(m_t);
@@ -138,19 +176,19 @@ void StratumTransport::close()
 
 void StratumTransport::applyKeepAlive_()
 {
-    esp_transport_keep_alive_t ka = {};
-    ka.keep_alive_enable = Config::isStratumKeepaliveEnabled();
-    ka.keep_alive_idle = 10;
-    ka.keep_alive_interval = 5;
-    ka.keep_alive_count = 3;
+    m_keepAlive = {};
+    m_keepAlive.keep_alive_enable = Config::isStratumKeepaliveEnabled();
+    m_keepAlive.keep_alive_idle = 10;
+    m_keepAlive.keep_alive_interval = 5;
+    m_keepAlive.keep_alive_count = 3;
 
-    if (!ka.keep_alive_enable) {
+    if (!m_keepAlive.keep_alive_enable) {
         return;
     }
 
     if (m_use_tls) {
-        esp_transport_ssl_set_keep_alive(m_t, &ka);
+        esp_transport_ssl_set_keep_alive(m_t, &m_keepAlive);
     } else {
-        esp_transport_tcp_set_keep_alive(m_t, &ka);
+        esp_transport_tcp_set_keep_alive(m_t, &m_keepAlive);
     }
 }
